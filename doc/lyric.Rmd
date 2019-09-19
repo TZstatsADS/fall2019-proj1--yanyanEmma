@@ -1,0 +1,237 @@
+---
+title: "The story behind lyrics"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+```{r warning=FALSE, echo=FALSE,include=FALSE}
+packages.used=c("tm", "wordcloud", "RColorBrewer", "tidyr","ggplot2","knitr",
+                "dplyr","tidytext", "wordcloud2")
+
+# check packages that need to be installed.
+packages.needed=setdiff(packages.used, 
+                        intersect(installed.packages()[,1], 
+                                  packages.used))
+# install additional packages
+if(length(packages.needed)>0){
+  install.packages(packages.needed, dependencies = TRUE,
+                   repos='http://cran.us.r-project.org')
+}
+
+library(tm)
+library(wordcloud)
+library(RColorBrewer)
+library(dplyr)
+library(tidyr)
+library(tidytext)
+library(ggplot2)
+library(wordcloud2)
+library(knitr)
+```
+
+```{r, echo=FALSE}
+
+include_graphics("music.jpg", auto_pdf = getOption("knitr.graphics.auto_pdf", FALSE), 
+    dpi = NULL)
+```
+
+### What it the most popular words used in lyrics?
+
+
+```{r warning=FALSE, echo=FALSE}
+lyric<-get(load('../data/processed_lyrics.RData') )
+lyric_corpus = Corpus(VectorSource(lyric$stemmedwords))
+tdm.all<-TermDocumentMatrix(lyric_corpus)
+tdm.tidy=tidy(tdm.all)
+tdm.overall=summarise(group_by(tdm.tidy, term), sum(count))
+wordcloud(tdm.overall$term, tdm.overall$`sum(count)`,
+          max.words=50,
+          min.freq=1,
+          random.order=FALSE,
+          rot.per=0.3,
+          use.r.layout=T,
+          random.color=FALSE,
+          colors=brewer.pal(9,"Blues"))
+```
+
+It seems like, 'love' is the most popular word in lyrics, but the previous wordcloud is too general, because it mix words from all songs, so the topic of each song was ignored, therefore, I choose to find out the most frequent word in each song, in this way, some other words are found, like some modal particle. There are the most popular topics for all songs.
+
+```{r warning=FALSE, echo=FALSE}
+ly_dtm_tfidf <- DocumentTermMatrix(lyric_corpus, control = list(weighting = weightTfIdf))
+ly_dtm_tfidf = removeSparseTerms(ly_dtm_tfidf, 0.95)
+
+dtm.tidy=tidy(ly_dtm_tfidf)
+dtm.overall=summarise(group_by(dtm.tidy, term), sum(count))
+
+dtm.max=summarise(group_by(dtm.tidy, document), count=max(count))
+
+everyart<-left_join(dtm.max,dtm.tidy,by=c('count','document'))
+everyart$document<-as.numeric(everyart$document)
+
+lyric$document=seq(1:length(lyric$song))
+
+all<-left_join(everyart,lyric,by='document')
+each=as.data.frame(table(all$term))
+wordcloud(each$Var1,each$Freq, 
+          max.words=30,
+          min.freq=1,
+          random.order=FALSE,
+          rot.per=0.3,
+          use.r.layout=T,
+          random.color=FALSE,
+          colors=brewer.pal(9,"Reds")) 
+
+```
+
+### What is the revolution of music?
+
+I want to know what kind of music is much more popular for a specific decade, so I divided the lyrics by decate, and find out the most popular music genre in that decade
+
+```{r warning=FALSE,error=TRUE, echo=FALSE}
+
+
+table1<-table(all[all$year>1970&all$year<1980,'genre'])/nrow(all[all$year>1970&all$year<1980,'genre'])
+table2<-table(all[all$year>1980&all$year<1990,'genre'])/nrow(all[all$year>1980&all$year<1990,'genre'])
+table3<-table(all[all$year>1990&all$year<2000,'genre'])/nrow(all[all$year>1990&all$year<2000,'genre'])
+table4<-table(all[all$year>2000&all$year<2010,'genre'])/nrow(all[all$year>2000&all$year<2010,'genre'])
+table5<-table(all[all$year>2010&all$year<2020,'genre'])/nrow(all[all$year>2010&all$year<2020,'genre'])
+
+
+
+d1<-as.data.frame(table1)
+d2<-as.data.frame(table2)
+d3<-as.data.frame(table3)
+d4<-as.data.frame(table4)
+d5<-as.data.frame(table5)
+
+
+j1<-full_join(d1,d2,by='Var1')
+j2<-full_join(j1,d3,by='Var1')
+j3<-full_join(j2,d4,by='Var1')
+j4<-full_join(j3,d5,by='Var1')
+
+data<-j4[-c(4,5),]
+data[is.na(data)] <- 0
+row.names(data)<-data$Var1
+data<-data[,-1]
+colnames(data)<-c('70s','80s','90s','00s','10s')
+m<-as.matrix(data)
+heatmap(m)
+```
+
+Basically, 1970s is the best age for Rock, then musicians transfer their attention to Hip Pop, Metal and Electronic music. 1980-2010 is a clear bound of these two different music style.  
+
+
+### Songs for 70s VS 10s
+
+```{r warning=FALSE, echo=FALSE}
+
+before_corpus = Corpus(VectorSource(lyric$stemmedwords[lyric$year>1970&lyric$year<1980]))
+
+
+tdm.all.before<-TermDocumentMatrix(before_corpus)
+tdm.tidy.before=tidy(tdm.all.before)
+
+after_corpus = Corpus(VectorSource(lyric$stemmedwords[lyric$year>2010&lyric$year<2020]))
+
+tdm.all.after<-TermDocumentMatrix(after_corpus)
+tdm.tidy.after=tidy(tdm.all.after)
+```
+
+The lyrics of the songs in 1970s are shorter than the songs in 2010s. In 1970s, peoples idea are much more conservative, the content are reserved and the melody are slow,  but after 2010, many new music genres appear, people concentrate more on the rhythm intead of content, hip-hop becomes popular，so the words used in the lyrics are more than before. 
+```{r,warning=FALSE, echo=FALSE}
+length_before<-tdm.tidy.before%>%group_by(document)%>%summarise(num=sum(count))
+length_after<-tdm.tidy.after%>%group_by(document)%>%summarise(num=sum(count))
+
+length_before$time="70s"
+length_after$time="10s"
+data<-rbind(length_before,length_after)
+
+ylim1<-boxplot.stats(data$num)$stats[c(1, 5)] 
+ggplot(data=data,aes(time,num))+geom_boxplot(outlier.shape=NA,aes(fill=time))+coord_cartesian(ylim = ylim1)+ggtitle("Difference of lyrics' length between 70' and 10'")+labs(y= "length", x = "time")
+
+```
+
+By comparing the most popular words in lyrics in 1970s, and 2010s, I find out the main topic for 10s is expression. Musicians use different  words to express themself,  say they want some thing or just express their feeling with some rude words. But music in 1970s pay more attention in decribe love and the story between lovers.
+```{r warning=FALSE, echo=FALSE}
+before2000<-all[all$year<1980&all$year>1970,]
+b2000<-as.data.frame(table(before2000$term))
+wordcloud(b2000$Var1, b2000$Freq,
+          max.words=50,
+          min.freq=1,
+          random.order=FALSE,
+          rot.per=0.3,
+          use.r.layout=T,
+          random.color=FALSE,
+          colors=brewer.pal(9,"Blues"))
+after2000<-all[all$year>2010&all$year<2020,]
+a2000<-as.data.frame(table(after2000$term))
+wordcloud(a2000$Var1, a2000$Freq,
+          max.words=50,
+          min.freq=1,
+          random.order=FALSE,
+          rot.per=0.3,
+          use.r.layout=T,
+          random.color=FALSE,
+          colors=brewer.pal(9,"Reds"))
+```
+
+
+### Different music genres
+
+Hip-hope has the longest lyric. It consists of a stylized rhythmic music that commonly accompanies rapping, a rhythmic and rhyming speech that is chanted. Because of the strong rhythmic of the music, more words needed to match the melody.
+
+```{r warning=FALSE, echo=FALSE}
+
+tdm.tidy$document=as.numeric(tdm.tidy$document)
+everyart<-right_join(lyric,tdm.tidy,by=c('document'))
+everyart=everyart%>%group_by(genre,document)%>%summarise(num=sum(count))
+
+ggplot(data=everyart,aes(genre,num))+geom_boxplot(outlier.shape=NA,aes(fill=genre))+coord_cartesian(ylim = c(1,600))
+```
+
+
+
+The representive word for different genre of music. The keyword for hip-hop is "shit", Hip hop is used for the cognitive, creative and emotive expression of Western youth of African descent who attempt to find success and meaning within the social realities of their lives that are characterised by poverty, racism and urban decay to express their feelings. So The lyrics contain many negtive words about the society but also many postive attitude to change their life. 
+
+The most popular word in Jazz is "love", Jazz is free and soulful, it can be used to express any feelings, and love is one of the most popular topic here.
+
+```{r warning=FALSE, echo=FALSE}
+
+hiphop<-all[all$genre=="Hip-Hop",]
+hiphop<-as.data.frame(table(hiphop$term))
+include_graphics("hp.jpg", auto_pdf = getOption("knitr.graphics.auto_pdf", FALSE), 
+    dpi = NULL)
+#wordcloud2(hiphop,figPath="hiphop.png",size=2,gridSize=10,backgroundColor = "black")
+wordcloud(hiphop$Var1, hiphop$Freq,
+          max.words=30,
+          min.freq=1,
+          random.order=FALSE,
+          rot.per=0.3,
+          use.r.layout=T,
+          random.color=FALSE,
+          colors=brewer.pal(9,"Reds"))
+
+Jazz<-all[all$genre=="Jazz",]
+Jazz<-as.data.frame(table(Jazz$term))
+include_graphics("jz.jpg", auto_pdf = getOption("knitr.graphics.auto_pdf", FALSE), 
+    dpi = NULL)
+#wordcloud2(Jazz,figPath="saxphone.jpg",size=0.8,gridSize=1)
+wordcloud(Jazz$Var1, Jazz$Freq,
+          max.words=30,
+          min.freq=1,
+          random.order=FALSE,
+          rot.per=0.3,
+          use.r.layout=T,
+          random.color=FALSE,
+          colors=brewer.pal(9,"Reds"))
+```
+
+
+
